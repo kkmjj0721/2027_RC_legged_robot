@@ -28,28 +28,34 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
-import inspect
+import torch
+from torch import Tensor
+import numpy as np
+from isaacgym.torch_utils import quat_apply, normalize
+from typing import Tuple
 
-class BaseConfig:
-    def __init__(self) -> None:
-        """ Initializes all member classes recursively. Ignores all namse starting with '__' (buit-in methods)."""
-        self.init_member_classes(self)
-    
-    @staticmethod
-    def init_member_classes(obj):
-        # iterate over all attributes names
-        for key in dir(obj):
-            # disregard builtin attributes
-            # if key.startswith("__"):
-            if key=="__class__":
-                continue
-            # get the corresponding attribute object
-            var =  getattr(obj, key)
-            # check if it the attribute is a class
-            if inspect.isclass(var):
-                # instantate the class
-                i_var = var()
-                # set the attribute to the instance instead of the type
-                setattr(obj, key, i_var)
-                # recursively init members of the attribute
-                BaseConfig.init_member_classes(i_var)
+# @ torch.jit.script
+def quat_apply_yaw(quat, vec):
+    quat_yaw = quat.clone().view(-1, 4)
+    quat_yaw[:, :2] = 0.
+    quat_yaw = normalize(quat_yaw)
+    return quat_apply(quat_yaw, vec)
+
+# @ torch.jit.script
+def wrap_to_pi(angles):
+    angles %= 2*np.pi
+    angles -= 2*np.pi * (angles > np.pi)
+    return angles
+
+# @ torch.jit.script
+def torch_rand_sqrt_float(lower, upper, shape, device):
+    # type: (float, float, Tuple[int, int], str) -> Tensor
+    r = 2*torch.rand(*shape, device=device) - 1
+    r = torch.where(r<0., -torch.sqrt(-r), torch.sqrt(r))
+    r =  (r + 1.) / 2.
+    return (upper - lower) * r + lower
+
+def get_scale_shift(range):
+    scale = 2. / (range[1] - range[0])
+    shift = (range[1] + range[0]) / 2.
+    return scale, shift

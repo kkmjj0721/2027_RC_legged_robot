@@ -31,7 +31,7 @@
 import torch
 
 
-class RolloutStorage:
+class MGDPRolloutStorage:
     class Transition:
         def __init__(self):
             self.observations = None

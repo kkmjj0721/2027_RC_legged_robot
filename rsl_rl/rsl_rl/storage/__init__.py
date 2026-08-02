@@ -4,4 +4,5 @@
 from .rollout_storage import RolloutStorage
 from .him_rollout_storage import HIMRolloutStorage
 from .rollout_storage_cts import RolloutStorageCTS
+from .mgdp_rollout_storage import MGDPRolloutStorage
 
