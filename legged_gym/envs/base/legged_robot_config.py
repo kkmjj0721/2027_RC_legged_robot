@@ -3,8 +3,8 @@ from .base_config import BaseConfig
 class LeggedRobotCfg(BaseConfig):
     class env:
         num_envs = 4096
-        num_observations = 235
-        num_privileged_obs = None # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise 
+        num_observations = 45
+        num_privileged_obs = 45 + 3 + 187 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise 
         num_actions = 12
         env_spacing = 3.  # not used with heightfields/trimeshes 
         send_timeouts = True # send time out information to the algorithm
@@ -20,7 +20,7 @@ class LeggedRobotCfg(BaseConfig):
         dynamic_friction = 1.0
         restitution = 0.
         # rough terrain only:
-        measure_heights = True
+        measure_heights = False
         measured_points_x = [-0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] # 1mx1.6m rectangle (without center line)
         measured_points_y = [-0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5]
         selected = False # select a unique terrain type and pass all arguments
@@ -36,7 +36,7 @@ class LeggedRobotCfg(BaseConfig):
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
 
     class commands:
-        curriculum = False
+        curriculum = True
         max_curriculum = 1.
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
@@ -89,13 +89,58 @@ class LeggedRobotCfg(BaseConfig):
         thickness = 0.01
 
     class domain_rand:
-        randomize_friction = True
-        friction_range = [0.5, 1.25]
-        randomize_base_mass = False
-        added_mass_range = [-1., 1.]
-        push_robots = True
-        push_interval_s = 15
+        # 基座负载质量
+        randomize_payload_mass = False
+        payload_mass_range = [-1, 2]
+
+        # 质心偏移
+        randomize_com_displacement = False
+        com_displacement_range = [-0.05, 0.05]
+
+        # 连杆质量
+        randomize_link_mass = False
+        link_mass_range = [0.9, 1.1]
+
+        # 关节摩擦
+        randomize_joint_friction = False
+        joint_friction_range = [0.5, 1.5]
+        
+        # 关节阻尼
+        randomize_joint_damping = False
+        joint_damping_range = [0.5, 1.5]
+        
+        # 地面摩擦力
+        randomize_friction = False
+        friction_range = [0.2, 1.25]
+        
+        # 恢复系数
+        randomize_restitution = False
+        restitution_range = [0., 1.0]
+        
+        # 电机输出强度
+        randomize_motor_strength = False
+        motor_strength_range = [0.9, 1.1]
+        
+        # 比例增益
+        randomize_kp = False
+        kp_range = [0.9, 1.1]
+        
+        # 微分增益
+        randomize_kd = False
+        kd_range = [0.9, 1.1]
+        
+        # 持续外部扰动
+        disturbance = False
+        disturbance_range = [-30.0, 30.0]
+        disturbance_interval = 8
+        
+        # 推力扰动
+        push_robots = False
+        push_interval_s = 16
         max_push_vel_xy = 1.
+
+        # 动作延时
+        action_delay = False
 
     class rewards:
         class scales:

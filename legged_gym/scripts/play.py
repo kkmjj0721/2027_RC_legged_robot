@@ -84,8 +84,8 @@ def play(args):
             logger.print_rewards()
 
 if __name__ == '__main__':
-    EXPORT_POLICY = True
-    RECORD_FRAMES = False
+    EXPORT_POLICY = True                # 是否导出策略
+    RECORD_FRAMES = False               # 
     MOVE_CAMERA = False
     args = get_args()
     play(args)

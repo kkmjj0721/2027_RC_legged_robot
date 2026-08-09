@@ -503,15 +503,17 @@ class LeggedRobot(BaseTask):
             self.add_noise = self.cfg.noise.add_noise
             noise_scales = self.cfg.noise.noise_scales
             noise_level = self.cfg.noise.noise_level
-            noise_vec[:3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-            noise_vec[3:6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-            noise_vec[6:9] = noise_scales.gravity * noise_level
-            noise_vec[9:12] = 0. # commands
-            noise_vec[12:24] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-            noise_vec[24:36] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-            noise_vec[36:48] = 0. # previous actions
+
+            noise_vec[:3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
+            noise_vec[3:6] = noise_scales.gravity * noise_level
+            noise_vec[6:9] = 0. # commands
+            noise_vec[9:21] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
+            noise_vec[21:33] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
+            noise_vec[33:45] = 0. # previous actions
+
             if self.cfg.terrain.measure_heights:
-                noise_vec[48:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
+                noise_vec[45:232] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
+                
             return noise_vec
     
     def check_termination(self):
@@ -722,23 +724,36 @@ class LeggedRobot(BaseTask):
             return torch.clip(torques, -self.torque_limits, self.torque_limits)
 
     def compute_observations(self):
-            """ Computes observations
-            """
-            self.obs_buf = torch.cat((  self.base_lin_vel * self.obs_scales.lin_vel,
-                                        self.base_ang_vel  * self.obs_scales.ang_vel,
-                                        self.projected_gravity,
-                                        self.commands[:, :3] * self.commands_scale,
-                                        (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                        self.dof_vel * self.obs_scales.dof_vel,
-                                        self.actions
-                                        ),dim=-1)
-            # add perceptive inputs if not blind
-            if self.cfg.terrain.measure_heights:
-                heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
-                self.obs_buf = torch.cat((self.obs_buf, heights), dim=-1)
-            # add noise if needed
-            if self.add_noise:
-                self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
+        """ Computes observations
+        """
+        actor_obs = torch.cat((  self.base_ang_vel  * self.obs_scales.ang_vel,
+                                    self.projected_gravity,
+                                    self.commands[:, :3] * self.commands_scale,
+                                    (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                                    self.dof_vel * self.obs_scales.dof_vel,
+                                    self.actions
+                                    ),dim=-1)
+            
+        # add perceptive inputs if not blind
+        if self.cfg.terrain.measure_heights:
+            heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
+            self.obs_buf = torch.cat((actor_obs, heights), dim=-1)
+        else:
+            self.obs_buf = actor_obs
+
+        if self.privileged_obs_buf is not None:
+            critic_parts = [
+                actor_obs,
+                self.base_lin_vel * self.obs_scales.lin_vel,
+            ]
+            if heights is not None:
+                critic_parts.append(heights)
+
+            self.privileged_obs_buf = torch.cat(critic_parts, dim=-1)
+        
+        # add noise if needed
+        if self.add_noise:
+            self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
 
     # ---------------------------------- 奖励设计 ---------------------------------- # 
     def compute_reward(self):

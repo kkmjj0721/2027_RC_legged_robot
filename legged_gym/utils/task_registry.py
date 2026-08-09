@@ -38,14 +38,7 @@ class TaskRegistry():
         runner_class_name = getattr(train_cfg, "runner_class_name", None)
         if runner_class_name is None and hasattr(train_cfg, "runner"):
             runner_class_name = getattr(train_cfg.runner, "runner_class_name", None)
-        if hasattr(train_cfg, "runner"):
-            policy_class_name = getattr(train_cfg.runner, "policy_class_name", "")
-            algorithm_class_name = getattr(train_cfg.runner, "algorithm_class_name", "")
-            if runner_class_name in [None, "OnPolicyRunner"]:
-                if "HIM" in policy_class_name or "HIM" in algorithm_class_name:
-                    runner_class_name = "HIMOnPolicyRunner"
-                elif "CTS" in policy_class_name or "CTS" in algorithm_class_name:
-                    runner_class_name = "OnPolicyRunnerCTS"
+
         if runner_class_name is None:
             runner_class_name = "OnPolicyRunner"
         if runner_class_name not in self.runner_classes:

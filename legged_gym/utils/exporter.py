@@ -1,40 +1,89 @@
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import copy
 import os
-from typing import Optional, Sequence
+from typing import Callable, Dict, Optional, Sequence
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 
+PolicyExporterFactory = Callable[..., torch.nn.Module]
+PolicyExportAdapter = Dict[str, Optional[PolicyExporterFactory]]
+
+_LEGACY_AUTO_EXPORT_TYPE = "generic"
+_POLICY_EXPORT_ADAPTERS: Dict[str, PolicyExportAdapter] = {}
+
+
+def _normalize_export_type(export_type) -> str:
+    if export_type is None:
+        return "auto"
+    return str(export_type).strip().lower()
+
+
+def register_policy_export_adapter(
+    export_type: str,
+    *,
+    jit_factory: Optional[PolicyExporterFactory] = None,
+    onnx_factory: Optional[PolicyExporterFactory] = None,
+):
+    """Register exporter factories for an explicit policy export type."""
+    resolved_type = _normalize_export_type(export_type)
+    if not resolved_type or resolved_type == "auto":
+        raise ValueError("export_type must be an explicit non-auto name.")
+    if jit_factory is None and onnx_factory is None:
+        raise ValueError(f"No exporter factories registered for export_type={resolved_type!r}.")
+    if jit_factory is not None and not callable(jit_factory):
+        raise TypeError(f"jit_factory for export_type={resolved_type!r} is not callable.")
+    if onnx_factory is not None and not callable(onnx_factory):
+        raise TypeError(f"onnx_factory for export_type={resolved_type!r} is not callable.")
+    _POLICY_EXPORT_ADAPTERS[resolved_type] = {
+        "jit": jit_factory,
+        "onnx": onnx_factory,
+    }
+
+
+def get_policy_export_adapter(export_type: str) -> PolicyExportAdapter:
+    """Return the registered exporter adapter for an explicit export type."""
+    resolved_type = _normalize_export_type(export_type)
+    if resolved_type == "auto":
+        resolved_type = _LEGACY_AUTO_EXPORT_TYPE
+    if resolved_type not in _POLICY_EXPORT_ADAPTERS:
+        supported = ", ".join(sorted(_POLICY_EXPORT_ADAPTERS))
+        raise ValueError(
+            f"Unsupported export_type={export_type!r}. "
+            f"Register an adapter or pass one of: {supported}"
+        )
+    return _POLICY_EXPORT_ADAPTERS[resolved_type]
+
+
 def detect_export_type(policy: object, export_type: str = "auto") -> str:
-    """Resolve policy export type.
+    """Resolve the explicitly requested policy export type.
 
-    Explicit caller override wins. Auto detection is the default path.
-    Detection order must go from specific structures to generic PPO actor.
+    ``auto`` is retained only as a legacy API value and maps to the generic
+    exporter adapter. This function intentionally does not inspect policy
+    internals; specialized graphs such as HIM must pass export_type explicitly.
     """
-    if export_type and export_type != "auto":
-        return export_type
+    del policy
+    resolved_type = _normalize_export_type(export_type)
+    if not resolved_type or resolved_type == "auto":
+        resolved_type = _LEGACY_AUTO_EXPORT_TYPE
+    get_policy_export_adapter(resolved_type)
+    return resolved_type
 
-    if hasattr(policy, "estimator"):
-        return "him"
 
-    if hasattr(policy, "student_moe_encoder"):
-        return "moe_cts"
-
-    if hasattr(policy, "student_encoder"):
-        return "cts"
-
-    if getattr(policy, "is_recurrent", False) or hasattr(policy, "memory_a"):
-        return "recurrent"
-
-    if hasattr(policy, "actor"):
-        return "ppo"
-
-    raise ValueError(
-        f"Unsupported policy structure for export: {type(policy).__name__}. "
-        "Pass export_type explicitly or add a new exporter branch."
-    )
+def _build_policy_exporter(export_type: str, export_format: str, policy: object, **kwargs):
+    adapter = get_policy_export_adapter(export_type)
+    exporter_factory = adapter.get(export_format)
+    if exporter_factory is None:
+        raise NotImplementedError(
+            f"{export_format.upper()} export is not registered for export_type={export_type!r}."
+        )
+    return exporter_factory(policy=policy, **kwargs)
 
 
 def resolve_policy_from_runner(runner: object):
@@ -66,10 +115,13 @@ def export_policy_as_jit(
         filename: The name of exported JIT file. Defaults to "policy.pt".
     """
     policy = resolve_policy_from_runner(policy)
-    if detect_export_type(policy, export_type) == "him":
-        policy_exporter = _TorchHIMPolicyExporter(policy, normalizer)
-    else:
-        policy_exporter = _TorchPolicyExporter(policy, normalizer)
+    resolved_type = detect_export_type(policy, export_type)
+    policy_exporter = _build_policy_exporter(
+        resolved_type,
+        "jit",
+        policy,
+        normalizer=normalizer,
+    )
     policy_exporter.export(path, filename)
 
 
@@ -94,10 +146,15 @@ def export_policy_as_onnx(
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
     policy = resolve_policy_from_runner(policy)
-    if detect_export_type(policy, export_type) == "him":
-        policy_exporter = _OnnxHIMPolicyExporter(policy, normalizer, input_dim, verbose)
-    else:
-        policy_exporter = _OnnxPolicyExporter(policy, normalizer, verbose)
+    resolved_type = detect_export_type(policy, export_type)
+    policy_exporter = _build_policy_exporter(
+        resolved_type,
+        "onnx",
+        policy,
+        normalizer=normalizer,
+        input_dim=input_dim,
+        verbose=verbose,
+    )
     policy_exporter.export(path, filename)
 
 
@@ -545,3 +602,47 @@ class _OnnxPolicyExporter(torch.nn.Module):
             output_names=output_names,
             dynamic_axes={},
         )
+
+
+def _make_torch_policy_exporter(policy, normalizer=None, **_kwargs):
+    return _TorchPolicyExporter(policy, normalizer)
+
+
+def _make_onnx_policy_exporter(policy, normalizer=None, verbose=False, **_kwargs):
+    return _OnnxPolicyExporter(policy, normalizer, verbose)
+
+
+def _make_torch_him_policy_exporter(policy, normalizer=None, **_kwargs):
+    return _TorchHIMPolicyExporter(policy, normalizer)
+
+
+def _make_onnx_him_policy_exporter(policy, normalizer=None, input_dim=None, verbose=False, **_kwargs):
+    return _OnnxHIMPolicyExporter(policy, normalizer, input_dim, verbose)
+
+
+def _register_builtin_policy_export_adapters():
+    generic_export_types = (
+        "generic",
+        "default",
+        "ppo",
+        "recurrent",
+        "cts",
+        "moe_cts",
+        "mcp_cts",
+        "ac_moe_cts",
+        "dual_moe_cts",
+    )
+    for export_type in generic_export_types:
+        register_policy_export_adapter(
+            export_type,
+            jit_factory=_make_torch_policy_exporter,
+            onnx_factory=_make_onnx_policy_exporter,
+        )
+    register_policy_export_adapter(
+        "him",
+        jit_factory=_make_torch_him_policy_exporter,
+        onnx_factory=_make_onnx_him_policy_exporter,
+    )
+
+
+_register_builtin_policy_export_adapters()
