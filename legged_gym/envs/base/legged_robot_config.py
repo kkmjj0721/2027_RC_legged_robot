@@ -2,9 +2,11 @@ from .base_config import BaseConfig
 
 class LeggedRobotCfg(BaseConfig):
     class env:
-        num_envs = 4096
-        num_observations = 45
-        num_privileged_obs = 45 + 3 + 3 + 187       # ons + vel +  + heights
+        num_envs = 8192
+        num_one_step_observations = 45
+        num_observations = num_one_step_observations
+        num_one_step_privileged_obs = num_one_step_observations + 3 + 187
+        num_privileged_obs = num_one_step_privileged_obs
         num_actions = 12
         env_spacing = 3.  # not used with heightfields/trimeshes 
         send_timeouts = True # send time out information to the algorithm
@@ -20,7 +22,7 @@ class LeggedRobotCfg(BaseConfig):
         dynamic_friction = 1.0
         restitution = 0.
         # rough terrain only:
-        measure_heights = False
+        measure_heights = True
         measured_points_x = [-0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] # 1mx1.6m rectangle (without center line)
         measured_points_y = [-0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5]
         selected = False # select a unique terrain type and pass all arguments
@@ -121,16 +123,16 @@ class LeggedRobotCfg(BaseConfig):
         
         # 恢复系数
         randomize_restitution = False
-        restitution_range = [0., 1.0]
+        restitution_range = [0., 0.4]
 
         # 随机推机器人
-        push_robots = False
+        push_robots = True
         push_interval_s = 4
         max_push_vel_xy = 0.4
         max_push_ang_vel = 0.6
 
         # 随机外力和外力矩
-        continuous_push = False
+        continuous_push = True
         max_push_force = 0.5
         max_push_torque = 0.5
         # 噪声
@@ -156,23 +158,23 @@ class LeggedRobotCfg(BaseConfig):
 
         # 电机观测延迟
         randomize_obs_motor_latency = False
-        range_obs_motor_latency = [2, 4]
+        range_obs_motor_latency = [1, 4]
 
         # IMU 观测延迟
         randomize_obs_imu_latency = False
-        range_obs_imu_latency = [1, 2]
+        range_obs_imu_latency = [1, 3]
 
         # ---------------------------------- 动作指令延迟随机化 --------------------------------- #
         add_cmd_action_latency = False
 
         # 动作指令延迟
         randomize_cmd_action_latency = False
-        range_cmd_action_latency = [2, 4]
+        range_cmd_action_latency = [1, 4]
 
 
     class rewards:
         class scales:
-            termination = -0.0
+            termination = -100.0
             tracking_lin_vel = 1.0
             tracking_ang_vel = 0.5
             lin_vel_z = -2.0
@@ -274,10 +276,10 @@ class LeggedRobotCfgPPO(BaseConfig):
         policy_class_name = 'ActorCritic'
         algorithm_class_name = 'PPO'
         num_steps_per_env = 24 # per iteration
-        max_iterations = 1500 # number of policy updates
+        max_iterations = 30000 # number of policy updates
 
         # logging
-        save_interval = 50 # check for potential saves every this many iterations
+        save_interval = 1000 # check for potential saves every this many iterations
         experiment_name = 'test'
         run_name = ''
         # load and resume
