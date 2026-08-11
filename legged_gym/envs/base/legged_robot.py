@@ -253,48 +253,147 @@ class LeggedRobot(BaseTask):
     
                 for s in range(len(props)):
                     props[s].friction = self.friction_coeffs[env_id]
+
+            if self.cfg.domain_rand.randomize_restitution:
+                if env_id == 0:
+                    restitution_range = self.cfg.domain_rand.restitution_range
+                    num_buckets = 64
+                    bucket_ids = torch.randint(
+                        0, num_buckets, (self.num_envs, 1), device="cpu"
+                    )
+                    restitution_buckets = torch_rand_float(
+                        restitution_range[0], restitution_range[1],
+                        (num_buckets, 1), device="cpu"
+                    )
+                    self.restitution_coeffs = restitution_buckets[bucket_ids]
+
+                restitution = self.restitution_coeffs[env_id, 0].item()
+                for shape in props:
+                    shape.restitution = restitution
+
             return props
 
     def _process_dof_props(self, props, env_id):
-            """ Callback allowing to store/change/randomize the DOF properties of each environment.
-                Called During environment creation.
-                Base behavior: stores position, velocity and torques limits defined in the URDF
+        """ Callback allowing to store/change/randomize the DOF properties of each environment.
+            Called During environment creation.
+            Base behavior: stores position, velocity and torques limits defined in the URDF
     
-            Args:
-                props (numpy.array): Properties of each DOF of the asset
-                env_id (int): Environment id
+        Args:
+            props (numpy.array): Properties of each DOF of the asset
+            env_id (int): Environment id
     
-            Returns:
-                [numpy.array]: Modified DOF properties
-            """
-            if env_id==0:
-                self.dof_pos_limits = torch.zeros(self.num_dof, 2, dtype=torch.float, device=self.device, requires_grad=False)
-                self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
-                self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
-                for i in range(len(props)):
-                    self.dof_pos_limits[i, 0] = props["lower"][i].item()
-                    self.dof_pos_limits[i, 1] = props["upper"][i].item()
-                    self.dof_vel_limits[i] = props["velocity"][i].item()
-                    self.torque_limits[i] = props["effort"][i].item()
-                    # soft limits
-                    m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
-                    r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
-                    self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
-                    self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
-            return props
+        Returns:
+            [numpy.array]: Modified DOF properties
+        """
+        if env_id==0:
+            self.dof_pos_limits = torch.zeros(self.num_dof, 2, dtype=torch.float, device=self.device, requires_grad=False)
+            self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+            self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+            for i in range(len(props)):
+                self.dof_pos_limits[i, 0] = props["lower"][i].item() * self.cfg.safety.pos_limit
+                self.dof_pos_limits[i, 1] = props["upper"][i].item() * self.cfg.safety.pos_limit
+                self.dof_vel_limits[i] = props["velocity"][i].item() * self.cfg.safety.vel_limit
+                self.torque_limits[i] = props["effort"][i].item() * self.cfg.safety.torque_limit
+
+        # randomization of the motor torques for real machine
+        if self.cfg.domain_rand.randomize_calculated_torque:
+            self.torque_multiplier[env_id,:] = torch_rand_float(self.cfg.domain_rand.torque_multiplier_range[0], 
+                                                                self.cfg.domain_rand.torque_multiplier_range[1], 
+                                                                (1,self.num_actions), device=self.device)
+
+        # randomization of the motor zero calibration for real machine
+        if self.cfg.domain_rand.randomize_motor_zero_offset:
+            self.motor_zero_offsets[env_id, :] = torch_rand_float(self.cfg.domain_rand.motor_zero_offset_range[0], 
+                                                                self.cfg.domain_rand.motor_zero_offset_range[1], 
+                                                                (1,self.num_actions), device=self.device)
+
+        # randomization of the motor pd gains
+        if self.cfg.domain_rand.randomize_pd_gains:
+            self.p_gains_multiplier[env_id, :] = torch_rand_float(self.cfg.domain_rand.stiffness_multiplier_range[0], 
+                                                                self.cfg.domain_rand.stiffness_multiplier_range[1], 
+                                                                (1,self.num_actions), device=self.device)
+            self.d_gains_multiplier[env_id, :] =  torch_rand_float(self.cfg.domain_rand.damping_multiplier_range[0], 
+                                                                self.cfg.domain_rand.damping_multiplier_range[1], 
+                                                                (1,self.num_actions), device=self.device)
+
+        # randomization of the motor frictions in issac gym 
+        if self.cfg.domain_rand.randomize_joint_friction:                      
+            self.joint_friction_coeffs[env_id, 0] = torch_rand_float(self.cfg.domain_rand.joint_friction_range[0], 
+                                                                    self.cfg.domain_rand.joint_friction_range[1], 
+                                                                    (1, 1), device=self.device)
+            
+        # randomization of the motor dampings in issac gym
+        if self.cfg.domain_rand.randomize_joint_damping:
+            self.joint_damping_coeffs[env_id, 0] = torch_rand_float(self.cfg.domain_rand.joint_damping_range[0], 
+                                                                    self.cfg.domain_rand.joint_damping_range[1], 
+                                                                    (1, 1), device=self.device)
+            
+        # randomization of the motor armature in issac gym
+        if self.cfg.domain_rand.randomize_joint_armature:
+            self.joint_armatures[env_id, 0] = torch_rand_float(self.cfg.domain_rand.joint_armature_range[0], 
+                                                            self.cfg.domain_rand.joint_armature_range[1], 
+                                                            (1, 1), device=self.device)
+            
+        for i in range(len(props)):
+            if self.cfg.domain_rand.randomize_joint_friction:
+                props["friction"][i] *= self.joint_friction_coeffs[env_id, 0].item()
+            if self.cfg.domain_rand.randomize_joint_damping:
+                props["damping"][i] *= self.joint_damping_coeffs[env_id, 0].item()
+            if self.cfg.domain_rand.randomize_joint_armature:
+                props["armature"][i] = self.joint_armatures[env_id, 0].item()
+
+        return props
 
     def _process_rigid_body_props(self, props, env_id):
-            # if env_id==0:
-            #     sum = 0
-            #     for i, p in enumerate(props):
-            #         sum += p.mass
-            #         print(f"Mass of body {i}: {p.mass} (before randomization)")
-            #     print(f"Total mass {sum} (before randomization)")
-            # randomize base mass
-            if self.cfg.domain_rand.randomize_base_mass:
-                rng = self.cfg.domain_rand.added_mass_range
-                props[0].mass += np.random.uniform(rng[0], rng[1])
-            return props
+        """ Callback allowing to store/change/randomize the DOF properties of each environment.
+            Called During environment creation.
+            Base behavior: stores position, velocity and torques limits defined in the URDF
+
+        Args:
+            props (numpy.array): Properties of each DOF of the asset
+            env_id (int): Environment id
+
+        Returns:
+            [numpy.array]: Modified DOF properties
+        """
+
+        # 
+        if self.cfg.domain_rand.randomize_payload_mass:
+            delta_mass = torch_rand_float(
+                self.cfg.domain_rand.payload_mass_range[0],
+                self.cfg.domain_rand.payload_mass_range[1],
+                (1, 1), device=self.device
+            )
+            self.payload_mass[env_id, 0] = delta_mass[0, 0]
+            props[0].mass += delta_mass[0, 0].item()
+
+        # 连杆质量
+        if self.cfg.domain_rand.randomize_link_mass:
+            link_ratio = torch_rand_float(
+                self.cfg.domain_rand.link_mass_range[0],
+                self.cfg.domain_rand.link_mass_range[1],
+                (1, self.num_bodies - 1), device=self.device
+            )
+            self.link_mass_ratios[env_id, :] = link_ratio
+            for body_id in range(1, len(props)):
+                props[body_id].mass *= link_ratio[0, body_id - 1].item()
+
+        # 质心
+        if self.cfg.domain_rand.randomize_com_displacement:
+            com_offset = torch_rand_float(
+                self.cfg.domain_rand.com_displacement_range[0],
+                self.cfg.domain_rand.com_displacement_range[1],
+                (1, 3), device=self.device
+            )
+            self.com_displacements[env_id, :] = com_offset
+            props[0].com += gymapi.Vec3(
+                com_offset[0, 0].item(),
+                com_offset[0, 1].item(),
+                com_offset[0, 2].item()
+            )
+
+        return props
+            
 
     def _create_envs(self):
             """ Creates environments:
@@ -353,6 +452,8 @@ class LeggedRobot(BaseTask):
             env_upper = gymapi.Vec3(0., 0., 0.)
             self.actor_handles = []
             self.envs = []
+
+            
             for i in range(self.num_envs):
                 # create env instance
                 env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
@@ -363,9 +464,11 @@ class LeggedRobot(BaseTask):
                 rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
                 self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
                 actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
+
                 dof_props = self._process_dof_props(dof_props_asset, i)
                 self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
                 body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
+
                 body_props = self._process_rigid_body_props(body_props, i)
                 self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
                 self.envs.append(env_handle)
@@ -726,7 +829,7 @@ class LeggedRobot(BaseTask):
     def compute_observations(self):
         """ Computes observations
         """
-        actor_obs = torch.cat((  self.base_ang_vel  * self.obs_scales.ang_vel,
+        actor_obs = torch.cat((     self.base_ang_vel  * self.obs_scales.ang_vel,
                                     self.projected_gravity,
                                     self.commands[:, :3] * self.commands_scale,
                                     (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
