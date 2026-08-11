@@ -4,7 +4,7 @@ class LeggedRobotCfg(BaseConfig):
     class env:
         num_envs = 4096
         num_observations = 45
-        num_privileged_obs = 45 + 3 + 187 # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise 
+        num_privileged_obs = 45 + 3 + 3 + 187       # ons + vel +  + heights
         num_actions = 12
         env_spacing = 3.  # not used with heightfields/trimeshes 
         send_timeouts = True # send time out information to the algorithm
@@ -89,58 +89,86 @@ class LeggedRobotCfg(BaseConfig):
         thickness = 0.01
 
     class domain_rand:
+        # ---------------------------------- 动力学参数随机化 ---------------------------------- #
         # 基座负载质量
         randomize_payload_mass = False
-        payload_mass_range = [-1, 2]
-
-        # 质心偏移
-        randomize_com_displacement = False
-        com_displacement_range = [-0.05, 0.05]
+        payload_mass_range = [-2.5, 2.5]
 
         # 连杆质量
         randomize_link_mass = False
         link_mass_range = [0.9, 1.1]
 
+        # 质心偏移
+        randomize_com_displacement = False
+        com_displacement_range = [-0.05, 0.05]
+
         # 关节摩擦
         randomize_joint_friction = False
-        joint_friction_range = [0.5, 1.5]
+        joint_friction_range = [0.01, 1.15]
         
         # 关节阻尼
         randomize_joint_damping = False
-        joint_damping_range = [0.5, 1.5]
-        
+        joint_damping_range = [0.3, 1.5]
+
+        # 关节等效转动惯量
+        randomize_joint_armature = False
+        joint_armature_range = [0.0001, 0.05]
+
+        # ---------------------------------- 接触与外力随机化 ---------------------------------- #
         # 地面摩擦力
         randomize_friction = False
-        friction_range = [0.2, 1.25]
+        friction_range = [0.2, 1.3]
         
         # 恢复系数
         randomize_restitution = False
         restitution_range = [0., 1.0]
-        
+
+        # 随机推机器人
+        push_robots = False
+        push_interval_s = 4
+        max_push_vel_xy = 0.4
+        max_push_ang_vel = 0.6
+
+        # 随机外力和外力矩
+        continuous_push = False
+        max_push_force = 0.5
+        max_push_torque = 0.5
+        # 噪声
+        push_force_noise = 0.5
+        push_torque_noise = 0.5
+
+        # ---------------------------------- 控制器与执行器随机化 ------------------------------- #
+        # 比例增益
+        randomize_pd_gains = False
+        stiffness_multiplier_range = [0.8, 1.2]  
+        damping_multiplier_range = [0.8, 1.2] 
+
+        # 电机零位误差
+        randomize_motor_zero_offset = False
+        motor_zero_offset_range = [-0.035, 0.035]
+
         # 电机输出强度
         randomize_motor_strength = False
-        motor_strength_range = [0.9, 1.1]
+        motor_strength_range = [0.8, 1.2]
         
-        # 比例增益
-        randomize_kp = False
-        kp_range = [0.9, 1.1]
-        
-        # 微分增益
-        randomize_kd = False
-        kd_range = [0.9, 1.1]
-        
-        # 持续外部扰动
-        disturbance = False
-        disturbance_range = [-30.0, 30.0]
-        disturbance_interval = 8
-        
-        # 推力扰动
-        push_robots = False
-        push_interval_s = 16
-        max_push_vel_xy = 1.
+        # ---------------------------------- 观测延迟随机化 ------------------------------------ #
+        add_obs_latency = False
 
-        # 动作延时
-        action_delay = False
+        # 电机观测延迟
+        randomize_obs_motor_latency = False
+        range_obs_motor_latency = [2, 4]
+
+        # IMU 观测延迟
+        randomize_obs_imu_latency = False
+        range_obs_imu_latency = [1, 2]
+
+        # ---------------------------------- 动作指令延迟随机化 --------------------------------- #
+        add_cmd_action_latency = False
+
+        # 动作指令延迟
+        randomize_cmd_action_latency = False
+        range_cmd_action_latency = [2, 4]
+
 
     class rewards:
         class scales:
