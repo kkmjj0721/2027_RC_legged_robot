@@ -75,7 +75,7 @@ class LeggedRobotCfg(BaseConfig):
         penalize_contacts_on = []
         terminate_after_contacts_on = []
         disable_gravity = False
-        collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
+        collapse_fixed_joints = False # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         fix_base_link = False # fixe the base of the robot
         default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
@@ -93,36 +93,36 @@ class LeggedRobotCfg(BaseConfig):
     class domain_rand:
         # ---------------------------------- 动力学参数随机化 ---------------------------------- #
         # 基座负载质量
-        randomize_payload_mass = False
+        randomize_payload_mass = True
         payload_mass_range = [-2.5, 2.5]
 
         # 连杆质量
-        randomize_link_mass = False
+        randomize_link_mass = True
         link_mass_range = [0.9, 1.1]
 
         # 质心偏移
-        randomize_com_displacement = False
+        randomize_com_displacement = True
         com_displacement_range = [-0.05, 0.05]
 
         # 关节摩擦
-        randomize_joint_friction = False
+        randomize_joint_friction = True
         joint_friction_range = [0.01, 1.15]
         
         # 关节阻尼
-        randomize_joint_damping = False
+        randomize_joint_damping = True
         joint_damping_range = [0.3, 1.5]
 
         # 关节等效转动惯量
-        randomize_joint_armature = False
+        randomize_joint_armature = True
         joint_armature_range = [0.0001, 0.05]
 
         # ---------------------------------- 接触与外力随机化 ---------------------------------- #
         # 地面摩擦力
-        randomize_friction = False
+        randomize_friction = True
         friction_range = [0.2, 1.3]
         
         # 恢复系数
-        randomize_restitution = False
+        randomize_restitution = True
         restitution_range = [0., 0.4]
 
         # 随机推机器人
@@ -141,34 +141,34 @@ class LeggedRobotCfg(BaseConfig):
 
         # ---------------------------------- 控制器与执行器随机化 ------------------------------- #
         # 比例增益
-        randomize_pd_gains = False
+        randomize_pd_gains = True
         stiffness_multiplier_range = [0.8, 1.2]  
         damping_multiplier_range = [0.8, 1.2] 
 
         # 电机零位误差
-        randomize_motor_zero_offset = False
+        randomize_motor_zero_offset = True
         motor_zero_offset_range = [-0.035, 0.035]
 
         # 电机输出强度
-        randomize_motor_strength = False
+        randomize_motor_strength = True
         motor_strength_range = [0.8, 1.2]
         
         # ---------------------------------- 观测延迟随机化 ------------------------------------ #
-        add_obs_latency = False
+        add_obs_latency = True
 
         # 电机观测延迟
-        randomize_obs_motor_latency = False
+        randomize_obs_motor_latency = True
         range_obs_motor_latency = [1, 4]
 
         # IMU 观测延迟
-        randomize_obs_imu_latency = False
+        randomize_obs_imu_latency = True
         range_obs_imu_latency = [1, 3]
 
         # ---------------------------------- 动作指令延迟随机化 --------------------------------- #
-        add_cmd_action_latency = False
+        add_cmd_action_latency = True
 
         # 动作指令延迟
-        randomize_cmd_action_latency = False
+        randomize_cmd_action_latency = True
         range_cmd_action_latency = [1, 4]
 
 
@@ -276,7 +276,7 @@ class LeggedRobotCfgPPO(BaseConfig):
         policy_class_name = 'ActorCritic'
         algorithm_class_name = 'PPO'
         num_steps_per_env = 24 # per iteration
-        max_iterations = 30000 # number of policy updates
+        max_iterations = 10000 # number of policy updates
 
         # logging
         save_interval = 1000 # check for potential saves every this many iterations
