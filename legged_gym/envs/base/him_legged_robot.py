@@ -1012,6 +1012,7 @@ class HimLeggedRobot(BaseTask):
             if self.device == 'cpu':
                 self.gym.fetch_results(self.sim, True)
             self.gym.refresh_dof_state_tensor(self.sim)
+            self._update_obs_latency_buffers()
 
         termination_ids, termination_priveleged_obs = self.post_physics_step()
 
