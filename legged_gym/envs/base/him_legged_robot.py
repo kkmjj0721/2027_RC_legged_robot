@@ -289,12 +289,16 @@ class HimLeggedRobot(BaseTask):
         self.rand_push_force = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
         # 随机推力矩
         self.rand_push_torque = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
+        self.body_force_tensor = torch.zeros(self.num_envs, self.num_bodies, 3, device=self.device, requires_grad=False)
+        self.body_torque_tensor = torch.zeros_like(self.body_force_tensor)
 
         # ---------------- 动作/观测延迟管理 ----------------
         # 初始化延迟缓冲区
         self._init_latency_buffers()
+        all_env_ids = torch.arange(self.num_envs, device=self.device)
+        self._resample_continuous_push(all_env_ids)
         # 重置所有环境的延迟缓冲区：
-        self._reset_latency_buffers(torch.arange(self.num_envs, device=self.device))
+        self._reset_latency_buffers(all_env_ids)
 
     def _init_latency_buffers(self):
         """
@@ -386,7 +390,100 @@ class HimLeggedRobot(BaseTask):
         else:
             self.motor_strength_multiplier[env_ids, :] = 1.0
 
+        self._resample_continuous_push(env_ids)
         self._reset_latency_buffers(env_ids)
+
+    def _clone_gym_props(self, props):
+        """Return a writable per-env copy for Isaac Gym structured arrays or prop lists."""
+        if isinstance(props, np.ndarray):
+            return props.copy()
+        if isinstance(props, list):
+            return [self._clone_gym_prop(prop) for prop in props]
+        if isinstance(props, tuple):
+            return [self._clone_gym_prop(prop) for prop in props]
+        if hasattr(props, "copy"):
+            try:
+                return props.copy()
+            except TypeError:
+                pass
+        return self._clone_gym_prop(props)
+
+    def _clone_gym_prop(self, prop):
+        clone = type(prop)()
+        for name in dir(prop):
+            if name.startswith("_"):
+                continue
+            try:
+                value = getattr(prop, name)
+            except Exception:
+                continue
+            if callable(value):
+                continue
+            try:
+                setattr(clone, name, value)
+            except Exception:
+                pass
+        return clone
+
+    def _resample_continuous_push(self, env_ids):
+        """Sample episode-constant continuous base wrench in ENV_SPACE.
+
+        push_force_noise and push_torque_noise are treated as uniform sampling
+        amplitudes in N and N*m, bounded by max_push_force/max_push_torque.
+        Values are held until the next reset and applied every physics substep.
+        """
+        if len(env_ids) == 0:
+            return
+
+        cfg = self.cfg.domain_rand
+        if not getattr(cfg, "continuous_push", False):
+            self.rand_push_force[env_ids] = 0.0
+            self.rand_push_torque[env_ids] = 0.0
+            self.body_force_tensor[env_ids] = 0.0
+            self.body_torque_tensor[env_ids] = 0.0
+            return
+
+        n = len(env_ids)
+        max_force = abs(float(getattr(cfg, "max_push_force", getattr(cfg, "push_force_noise", 0.0))))
+        max_torque = abs(float(getattr(cfg, "max_push_torque", getattr(cfg, "push_torque_noise", 0.0))))
+        force_amp = min(abs(float(getattr(cfg, "push_force_noise", max_force))), max_force)
+        torque_amp = min(abs(float(getattr(cfg, "push_torque_noise", max_torque))), max_torque)
+
+        if force_amp > 0.0:
+            self.rand_push_force[env_ids] = torch_rand_float(
+                -force_amp, force_amp, (n, 3), device=self.device)
+            if max_force > 0.0:
+                self.rand_push_force[env_ids] = torch.clip(
+                    self.rand_push_force[env_ids], -max_force, max_force)
+        else:
+            self.rand_push_force[env_ids] = 0.0
+
+        if torque_amp > 0.0:
+            self.rand_push_torque[env_ids] = torch_rand_float(
+                -torque_amp, torque_amp, (n, 3), device=self.device)
+            if max_torque > 0.0:
+                self.rand_push_torque[env_ids] = torch.clip(
+                    self.rand_push_torque[env_ids], -max_torque, max_torque)
+        else:
+            self.rand_push_torque[env_ids] = 0.0
+
+        self.body_force_tensor[env_ids] = 0.0
+        self.body_torque_tensor[env_ids] = 0.0
+
+    def _apply_continuous_push(self):
+        if not getattr(self.cfg.domain_rand, "continuous_push", False):
+            return
+
+        self.body_force_tensor.zero_()
+        self.body_torque_tensor.zero_()
+        self.body_force_tensor[:, self.base_body_index, :] = self.rand_push_force
+        self.body_torque_tensor[:, self.base_body_index, :] = self.rand_push_torque
+        self.gym.apply_rigid_body_force_tensors(
+            self.sim,
+            gymtorch.unwrap_tensor(self.body_force_tensor),
+            gymtorch.unwrap_tensor(self.body_torque_tensor),
+            gymapi.ENV_SPACE,
+        )
 
     def _init_base_height_points(self):
         """ Returns points at which the height measurments are sampled (in base frame)
@@ -427,7 +524,7 @@ class HimLeggedRobot(BaseTask):
                 self.friction_coeffs = friction_buckets[bucket_ids]
     
             for s in range(len(props)):
-                props[s].friction = self.friction_coeffs[env_id]
+                props[s].friction = self.friction_coeffs[env_id, 0].item()
 
         if self.cfg.domain_rand.randomize_restitution:
             if env_id == 0:
@@ -460,21 +557,17 @@ class HimLeggedRobot(BaseTask):
         Returns:
             [numpy.array]: Modified DOF properties
         """
+        base_props = getattr(self, "_dof_props_asset_original", props)
+
         if env_id==0:
             self.dof_pos_limits = torch.zeros(self.num_dof, 2, dtype=torch.float, device=self.device, requires_grad=False)
             self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             for i in range(len(props)):
-                self.dof_pos_limits[i, 0] = props["lower"][i].item()
-                self.dof_pos_limits[i, 1] = props["upper"][i].item()
-                self.dof_vel_limits[i] = props["velocity"][i].item()
-                self.torque_limits[i] = props["effort"][i].item()
-
-                # soft limits for the dof position limit reward
-                m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
-                r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
-                self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
-                self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
+                self.dof_pos_limits[i, 0] = props["lower"][i].item() * self.cfg.rewards.soft_dof_pos_limit
+                self.dof_pos_limits[i, 1] = props["upper"][i].item() * self.cfg.rewards.soft_dof_pos_limit
+                self.dof_vel_limits[i] = props["velocity"][i].item() * self.cfg.rewards.soft_dof_vel_limit
+                self.torque_limits[i] = props["effort"][i].item() * self.cfg.rewards.soft_torque_limit
 
         # randomization of the motor frictions in issac gym 
         if self.cfg.domain_rand.randomize_joint_friction:                      
@@ -496,9 +589,9 @@ class HimLeggedRobot(BaseTask):
             
         for i in range(len(props)):
             if self.cfg.domain_rand.randomize_joint_friction:
-                props["friction"][i] *= self.joint_friction_coeffs[env_id, 0].item()
+                props["friction"][i] = base_props["friction"][i] * self.joint_friction_coeffs[env_id, 0].item()
             if self.cfg.domain_rand.randomize_joint_damping:
-                props["damping"][i] *= self.joint_damping_coeffs[env_id, 0].item()
+                props["damping"][i] = base_props["damping"][i] * self.joint_damping_coeffs[env_id, 0].item()
             if self.cfg.domain_rand.randomize_joint_armature:
                 props["armature"][i] = self.joint_armatures[env_id, 0].item()
 
@@ -517,7 +610,12 @@ class HimLeggedRobot(BaseTask):
             [numpy.array]: Modified DOF properties
         """
 
-        # 
+        # Keep every callback invocation relative to the freshly returned
+        # actor baseline.  This callback is creation-only; using absolute
+        # assignments also prevents accidental accumulation if a caller
+        # reuses a property object.
+        base_props = self._clone_gym_props(props)
+
         if self.cfg.domain_rand.randomize_payload_mass:
             delta_mass = torch_rand_float(
                 self.cfg.domain_rand.payload_mass_range[0],
@@ -525,7 +623,7 @@ class HimLeggedRobot(BaseTask):
                 (1, 1), device=self.device
             )
             self.payload_mass[env_id, 0] = delta_mass[0, 0]
-            props[0].mass += delta_mass[0, 0].item()
+            props[0].mass = base_props[0].mass + delta_mass[0, 0].item()
 
         # 连杆质量
         if self.cfg.domain_rand.randomize_link_mass:
@@ -536,7 +634,10 @@ class HimLeggedRobot(BaseTask):
             )
             self.link_mass_ratios[env_id, :] = link_ratio
             for body_id in range(1, len(props)):
-                props[body_id].mass *= link_ratio[0, body_id - 1].item()
+                props[body_id].mass = (
+                    base_props[body_id].mass
+                    * link_ratio[0, body_id - 1].item()
+                )
 
         # 质心
         if self.cfg.domain_rand.randomize_com_displacement:
@@ -546,10 +647,11 @@ class HimLeggedRobot(BaseTask):
                 (1, 3), device=self.device
             )
             self.com_displacements[env_id, :] = com_offset
-            props[0].com += gymapi.Vec3(
-                com_offset[0, 0].item(),
-                com_offset[0, 1].item(),
-                com_offset[0, 2].item()
+            base_com = base_props[0].com
+            props[0].com = gymapi.Vec3(
+                base_com.x + com_offset[0, 0].item(),
+                base_com.y + com_offset[0, 1].item(),
+                base_com.z + com_offset[0, 2].item(),
             )
 
         return props
@@ -587,6 +689,8 @@ class HimLeggedRobot(BaseTask):
         self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
         dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
         rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(robot_asset)
+        self._dof_props_asset_original = self._clone_gym_props(dof_props_asset)
+        self._rigid_shape_props_asset_original = self._clone_gym_props(rigid_shape_props_asset)
     
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
@@ -625,13 +729,16 @@ class HimLeggedRobot(BaseTask):
             pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
                     
-            rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
+            rigid_shape_props = self._process_rigid_shape_props(
+                self._clone_gym_props(self._rigid_shape_props_asset_original), i)
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
 
-            dof_props = self._process_dof_props(dof_props_asset, i)
+            dof_props = self._process_dof_props(
+                self._clone_gym_props(self._dof_props_asset_original), i)
             self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
-            body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
+            body_props = self._clone_gym_props(
+                self.gym.get_actor_rigid_body_properties(env_handle, actor_handle))
 
             body_props = self._process_rigid_body_props(body_props, i)
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
@@ -649,6 +756,29 @@ class HimLeggedRobot(BaseTask):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
+
+        configured_base_name = getattr(self.cfg.asset, "base_name", None)
+        if configured_base_name:
+            base_candidates = [configured_base_name]
+        else:
+            base_candidates = [name for name in ("trunk", "base") if name in body_names]
+
+        self.base_body_index = -1
+        self.base_body_name = None
+        for candidate in base_candidates:
+            candidate_index = self.gym.find_actor_rigid_body_handle(
+                self.envs[0], self.actor_handles[0], candidate)
+            if candidate_index >= 0:
+                self.base_body_index = candidate_index
+                self.base_body_name = candidate
+                break
+
+        if self.base_body_index < 0:
+            requested = configured_base_name or "'trunk' then 'base'"
+            raise RuntimeError(
+                f"Unable to resolve continuous-push base rigid body ({requested}). "
+                f"Available rigid bodies: {body_names}"
+            )
 
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
@@ -1008,6 +1138,7 @@ class HimLeggedRobot(BaseTask):
             actions_for_torque = self._get_delayed_actions()
             self.torques = self._compute_torques(actions_for_torque).view(self.torques.shape)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
+            self._apply_continuous_push()
             self.gym.simulate(self.sim)
             if self.device == 'cpu':
                 self.gym.fetch_results(self.sim, True)
@@ -1182,7 +1313,9 @@ class HimLeggedRobot(BaseTask):
 
         if self.cfg.terrain.measure_heights:
             self.measured_heights = self._get_heights()
-        if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
+        if (self.cfg.domain_rand.push_robots
+                and not getattr(self.cfg.domain_rand, "continuous_push", False)
+                and self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
                 self._push_robots()
 
     def _compute_torques(self, actions):
@@ -1216,17 +1349,11 @@ class HimLeggedRobot(BaseTask):
         torques = torques * self.motor_strength_multiplier
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
 
-    def compute_observations(self):
-        """Computes actor observations and privileged critic observations.
-
-        HIMLoco-style layout with 235 privileged dims:
-        current_obs = [actor_obs(45), base_lin_vel(3), heights(187)].
-        Actor only receives the first num_one_step_obs dims.
-        """
+    def _compute_current_observation_parts(self, add_actor_noise=True):
         base_ang_vel_obs, projected_gravity_obs = self._get_imu_obs()
         dof_pos_obs, dof_vel_obs = self._get_motor_obs()
 
-        current_obs = torch.cat((
+        clean_actor_obs = torch.cat((
             self.commands[:, :3] * self.commands_scale,
             base_ang_vel_obs,
             projected_gravity_obs,
@@ -1235,69 +1362,43 @@ class HimLeggedRobot(BaseTask):
             self.actions,
         ), dim=-1)
 
-        # add noise if needed
-        if self.add_noise:
-            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
+        actor_obs = clean_actor_obs
+        if add_actor_noise and self.add_noise:
+            actor_obs = actor_obs + (2 * torch.rand_like(actor_obs) - 1) * self.noise_scale_vec[:self.num_one_step_obs]
 
-        # add perceptive inputs if not blind
-        current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel), dim=-1)
+        critic_obs = torch.cat((clean_actor_obs, self.base_lin_vel * self.obs_scales.lin_vel), dim=-1)
         if self.cfg.terrain.measure_heights:
-            heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements 
-            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions+187)]
-            current_obs = torch.cat((current_obs, heights), dim=-1)
+            heights = torch.clip(
+                self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights,
+                -1, 1.,
+            ) * self.obs_scales.height_measurements
+            critic_obs = torch.cat((critic_obs, heights), dim=-1)
 
-        self.obs_buf = torch.cat((current_obs[:, :self.num_one_step_obs], self.obs_buf[:, :-self.num_one_step_obs]), dim=-1)
-        self.privileged_obs_buf = torch.cat((current_obs[:, :self.num_one_step_privileged_obs], self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs]), dim=-1)
+        return actor_obs, critic_obs
+
+    def compute_observations(self):
+        """Computes noisy actor history and clean privileged critic observations."""
+        actor_obs, critic_obs = self._compute_current_observation_parts(add_actor_noise=True)
+
+        self.obs_buf = torch.cat((actor_obs[:, :self.num_one_step_obs], self.obs_buf[:, :-self.num_one_step_obs]), dim=-1)
+        if self.privileged_obs_buf is not None:
+            self.privileged_obs_buf = torch.cat((
+                critic_obs[:, :self.num_one_step_privileged_obs],
+                self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs],
+            ), dim=-1)
 
     def get_current_obs(self):
-        base_ang_vel_obs, projected_gravity_obs = self._get_imu_obs()
-        dof_pos_obs, dof_vel_obs = self._get_motor_obs()
-
-        current_obs = torch.cat((   self.commands[:, :3] * self.commands_scale,
-                                    base_ang_vel_obs,
-                                    projected_gravity_obs,
-                                    dof_pos_obs,
-                                    dof_vel_obs,
-                                    self.actions
-                                    ),dim=-1)
-        # add noise if needed
-        if self.add_noise:
-            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
-
-        # add perceptive inputs if not blind
-        current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel), dim=-1)
-        if self.cfg.terrain.measure_heights:
-            heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements 
-            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions+187)]
-            current_obs = torch.cat((current_obs, heights), dim=-1)
-
-        return current_obs
+        _, critic_obs = self._compute_current_observation_parts(add_actor_noise=False)
+        return critic_obs
 
     def compute_termination_observations(self, env_ids):
         """ Computes observations
         """
-        base_ang_vel_obs, projected_gravity_obs = self._get_imu_obs()
-        dof_pos_obs, dof_vel_obs = self._get_motor_obs()
-
-        current_obs = torch.cat((   self.commands[:, :3] * self.commands_scale,
-                                            base_ang_vel_obs,
-                                            projected_gravity_obs,
-                                            dof_pos_obs,
-                                            dof_vel_obs,
-                                            self.actions
-                                            ),dim=-1)
-        # add noise if needed
-        if self.add_noise:
-            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
-
-        # add perceptive inputs if not blind
-        current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel), dim=-1)
-        if self.cfg.terrain.measure_heights:
-            heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements 
-            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions+187)]
-            current_obs = torch.cat((current_obs, heights), dim=-1)
-
-        return torch.cat((current_obs[:, :self.num_one_step_privileged_obs], self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs]), dim=-1)[env_ids]
+        _, critic_obs = self._compute_current_observation_parts(add_actor_noise=False)
+        return torch.cat((
+            critic_obs[:, :self.num_one_step_privileged_obs],
+            self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs],
+        ), dim=-1)[env_ids]
 
 # ---------------------------------- 奖励设计 ---------------------------------- #
     def compute_reward(self):

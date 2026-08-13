@@ -2,7 +2,7 @@ from .base_config import BaseConfig
 
 class LeggedRobotCfg(BaseConfig):
     class env:
-        num_envs = 8192
+        num_envs = 4096
         num_one_step_observations = 45
         num_observations = num_one_step_observations
         num_one_step_privileged_obs = num_one_step_observations + 3 + 187
@@ -154,29 +154,29 @@ class LeggedRobotCfg(BaseConfig):
         motor_strength_range = [0.8, 1.2]
         
         # ---------------------------------- 观测延迟随机化 ------------------------------------ #
-        add_obs_latency = True
+        add_obs_latency = False
 
         # 电机观测延迟
-        randomize_obs_motor_latency = True
+        randomize_obs_motor_latency = False
         range_obs_motor_latency = [1, 4]
 
         # IMU 观测延迟
-        randomize_obs_imu_latency = True
+        randomize_obs_imu_latency = False
         range_obs_imu_latency = [1, 3]
 
         # ---------------------------------- 动作指令延迟随机化 --------------------------------- #
-        add_cmd_action_latency = True
+        add_cmd_action_latency = False
 
         # 动作指令延迟
-        randomize_cmd_action_latency = True
+        randomize_cmd_action_latency = False
         range_cmd_action_latency = [1, 4]
 
 
     class rewards:
         class scales:
-            termination = -100.0
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
+            termination = -0.0
+            tracking_lin_vel = 1.5
+            tracking_ang_vel = 0.75
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -0.
@@ -277,7 +277,7 @@ class LeggedRobotCfgPPO(BaseConfig):
         policy_class_name = 'ActorCritic'
         algorithm_class_name = 'PPO'
         num_steps_per_env = 24 # per iteration
-        max_iterations = 10000 # number of policy updates
+        max_iterations = 5000 # number of policy updates
 
         # logging
         save_interval = 1000 # check for potential saves every this many iterations

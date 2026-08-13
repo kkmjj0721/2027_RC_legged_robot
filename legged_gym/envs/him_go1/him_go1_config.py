@@ -68,14 +68,15 @@ class HimGO1RoughCfg( HimLeggedRobotCfg ):
             action_rate = -0.01
             smoothness = -0.01
             feet_air_time =  0.0
-            collision = -0.0
+            collision = -0.5
             feet_stumble = -0.0
-            stand_still = -0.
+            stand_still = -1.0
             torques = -0.0
             dof_vel = -0.0
             dof_pos_limits = -0.0
             dof_vel_limits = -0.0
             torque_limits = -0.0
+            hip_pos = -1.0
 
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
@@ -88,7 +89,7 @@ class HimGO1RoughCfg( HimLeggedRobotCfg ):
 
 class HimGo1RoughCfgPPO( HimLeggedRobotCfgPPO ):
     class algorithm( HimLeggedRobotCfgPPO.algorithm ):
-        entropy_coef = 0.01
+        entropy_coef = 0.005
     class runner( HimLeggedRobotCfgPPO.runner ):
         run_name = ''
         experiment_name = 'him_go1'

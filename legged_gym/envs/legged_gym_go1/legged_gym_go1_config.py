@@ -39,15 +39,15 @@ class GO1RoughCfg( LeggedRobotCfg ):
         self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
   
     class rewards( LeggedRobotCfg.rewards ):
-        soft_dof_pos_limit = 0.9
         base_height_target = 0.30
+        soft_dof_pos_limit = 0.9
         class scales( LeggedRobotCfg.rewards.scales ):
             torques = -0.0002
             dof_pos_limits = -10.0
 
 class GO1RoughCfgPPO( LeggedRobotCfgPPO ):
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        entropy_coef = 0.01
+        entropy_coef = 0.005
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
         experiment_name = 'legged_gym_go1'
