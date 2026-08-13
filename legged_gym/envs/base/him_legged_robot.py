@@ -1066,6 +1066,10 @@ class HimLeggedRobot(BaseTask):
         # ---------------- 2. 更新 IMU 观测历史缓冲区（角速度与重力向量） ----------------
         if cfg.randomize_obs_imu_latency:
             max_delay = cfg.range_obs_imu_latency[1]
+            self.gym.refresh_actor_root_state_tensor(self.sim)
+            self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+            self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+
             imu = torch.cat((
                 self.base_ang_vel * self.obs_scales.ang_vel,
                 self.projected_gravity,
