@@ -1,6 +1,6 @@
 from legged_gym.envs.base.him_legged_robot_config import HimLeggedRobotCfg, HimLeggedRobotCfgPPO
 
-class GO1RoughCfg( HimLeggedRobotCfg ):
+class HimGO1RoughCfg( HimLeggedRobotCfg ):
     class init_state( HimLeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.42] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
@@ -86,7 +86,7 @@ class GO1RoughCfg( HimLeggedRobotCfg ):
         max_contact_force = 100. # forces above this value are penalized
         clearance_height_target = -0.2
 
-class A1RoughCfgPPO( HimLeggedRobotCfgPPO ):
+class HimGo1RoughCfgPPO( HimLeggedRobotCfgPPO ):
     class algorithm( HimLeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
     class runner( HimLeggedRobotCfgPPO.runner ):
