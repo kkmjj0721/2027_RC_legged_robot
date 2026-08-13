@@ -278,10 +278,10 @@ class HimLeggedRobotCfgPPO(BaseConfig):
         policy_class_name = 'HIMActorCritic'
         algorithm_class_name = 'HIMPPO'
         num_steps_per_env = 100 # per iteration
-        max_iterations = 200000 # number of policy updates
+        max_iterations = 20000 # number of policy updates
 
         # logging
-        save_interval = 20 # check for potential saves every this many iterations
+        save_interval = 500 # check for potential saves every this many iterations
         experiment_name = 'test'
         run_name = ''
         # load and resume
