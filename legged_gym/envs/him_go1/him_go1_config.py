@@ -91,4 +91,4 @@ class A1RoughCfgPPO( HimLeggedRobotCfgPPO ):
         entropy_coef = 0.01
     class runner( HimLeggedRobotCfgPPO.runner ):
         run_name = ''
-        experiment_name = 'rough_go1'
+        experiment_name = 'him_go1'
