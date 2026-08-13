@@ -1,24 +1,7 @@
-from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
+from legged_gym.envs.base.him_legged_robot_config import HimLeggedRobotCfg, HimLeggedRobotCfgPPO
 
-
-
-class HimGo1cfg(LeggedRobotCfg):
-    class env( LeggedRobotCfg.env ):
-        num_envs = 4096
-        num_one_step_observations = 45
-        history_lenth = 6
-        num_observations = num_one_step_observations * history_lenth
-        num_one_step_privileged_obs = 45 + 3 + 3 + 187
-        num_actions = 12
-        send_timeouts = True # send time out information to the algorithm
-        episode_length_s = 20 # episode length in seconds
-
-    class terrain( LeggedRobotCfg.terrain ):
-        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
-        curriculum = True
-        measure_heights = True
-
-    class init_state( LeggedRobotCfg.init_state ):
+class GO1RoughCfg( HimLeggedRobotCfg ):
+    class init_state( HimLeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.42] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
             'FL_hip_joint': 0.1,   # [rad]
@@ -37,44 +20,75 @@ class HimGo1cfg(LeggedRobotCfg):
             'RR_calf_joint': -1.5,    # [rad]
         }
 
-    class control( LeggedRobotCfg.control ):
-            # PD Drive parameters:
-            control_type = 'P'
-            stiffness = {'joint': 20.}  # [N*m/rad]
-            damping = {'joint': 0.5}     # [N*m*s/rad]
-            # action scale: target angle = actionScale * action + defaultAngle
-            action_scale = 0.25
-            # decimation: Number of control action updates @ sim DT per policy DT
-            decimation = 4
+    class control( HimLeggedRobotCfg.control ):
+        # PD Drive parameters:
+        control_type = 'P'
+        stiffness = {'joint': 40.0}  # [N*m/rad]
+        damping = {'joint': 1.0}     # [N*m*s/rad]
+        # action scale: target angle = actionScale * action + defaultAngle
+        action_scale = 0.25
+        # decimation: Number of control action updates @ sim DT per policy DT
+        decimation = 4
+        hip_reduction = 1.0
+    
+    class commands( HimLeggedRobotCfg.commands ):
+            curriculum = True
+            max_curriculum = 1.0
+            num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+            resampling_time = 10. # time before command are changed[s]
+            heading_command = True # if true: compute ang vel command from heading error
+            class ranges( HimLeggedRobotCfg.commands.ranges):
+                lin_vel_x = [-1.0, 1.0] # min max [m/s]
+                lin_vel_y = [-1.0, 1.0]   # min max [m/s]
+                ang_vel_yaw = [-3.14, 3.14]    # min max [rad/s]
+                heading = [-3.14, 3.14]
 
-    class asset( LeggedRobotCfg.asset ):
-            file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/urdf/go1.urdf'
-            name = "a1"
-            foot_name = "foot"
-            penalize_contacts_on = ["thigh", "calf"]
-            terminate_after_contacts_on = ["base"]
-            self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
+    class asset( HimLeggedRobotCfg.asset ):
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/urdf/go1.urdf'
+        name = "go1"
+        foot_name = "foot"
+        penalize_contacts_on = ["thigh", "calf", "base"]
+        terminate_after_contacts_on = ["base"]
+        privileged_contacts_on = ["base", "thigh", "calf"]
+        self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
+        flip_visual_attachments = True # Some .obj meshes must be flipped from y-up to z-up
+  
+    class rewards( HimLeggedRobotCfg.rewards ):
+        class scales:
+            termination = -0.0
+            tracking_lin_vel = 1.0
+            tracking_ang_vel = 0.5
+            lin_vel_z = -1.5
+            ang_vel_xy = -0.05
+            orientation = -0.2
+            dof_acc = -2.5e-7
+            joint_power = -2e-5
+            base_height = -1.0
+            foot_clearance = -0.01
+            action_rate = -0.01
+            smoothness = -0.01
+            feet_air_time =  0.0
+            collision = -0.0
+            feet_stumble = -0.0
+            stand_still = -0.
+            torques = -0.0
+            dof_vel = -0.0
+            dof_pos_limits = -0.0
+            dof_vel_limits = -0.0
+            torque_limits = -0.0
 
-    class domain_rand( LeggedRobotCfg.domain_rand ):
-        pass
+        only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
+        tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
+        soft_dof_pos_limit = 1. # percentage of urdf limits, values above this limit are penalized
+        soft_dof_vel_limit = 1.
+        soft_torque_limit = 1.
+        base_height_target = 0.30
+        max_contact_force = 100. # forces above this value are penalized
+        clearance_height_target = -0.2
 
-    class rewards( LeggedRobotCfg.rewards ):
-        pass
-
-    class normalization( LeggedRobotCfg.normalization ):
-        contact_force_range = [0.0, 50.0]
-        class obs_scales( LeggedRobotCfg.normalization.obs_scales ):
-            lin_vel = 2.0
-            ang_vel = 0.25
-            dof_pos = 1.0
-            dof_vel = 0.05
-            height_measurements = 5.0
-        clip_observations = 100.
-        clip_actions = 100.
-
-
-class HimGo1cfgPPO( LeggedRobotCfgPPO ):
-    runner_class_name = "HIMOnPolicyRunner"
-
-    class algorithm( LeggedRobotCfgPPO.algorithm ):
-        pass
+class A1RoughCfgPPO( HimLeggedRobotCfgPPO ):
+    class algorithm( HimLeggedRobotCfgPPO.algorithm ):
+        entropy_coef = 0.01
+    class runner( HimLeggedRobotCfgPPO.runner ):
+        run_name = ''
+        experiment_name = 'rough_go1'
