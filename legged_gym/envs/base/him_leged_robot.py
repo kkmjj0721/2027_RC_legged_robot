@@ -1153,8 +1153,8 @@ class HimLeggedRobot(BaseTask):
         self.reset_idx(env_ids)
         self.compute_observations() # in some cases a simulation step might be required to refresh some obs (for example body positions)
 
-        self.last_actions[:] = self.actions[:]
         self.last_last_actions[:] = self.last_actions[:]
+        self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
         self.last_root_vel[:] = self.root_states[:, 7:13]
 
