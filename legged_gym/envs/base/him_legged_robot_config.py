@@ -76,7 +76,7 @@ class HimLeggedRobotCfg(BaseConfig):
         penalize_contacts_on = []
         terminate_after_contacts_on = []
         disable_gravity = False
-        collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
+        collapse_fixed_joints = False # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         fix_base_link = False # fixe the base of the robot
         default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
@@ -183,12 +183,13 @@ class HimLeggedRobotCfg(BaseConfig):
             torques = -0.00001
             dof_vel = -0.
             dof_acc = -2.5e-7
-            base_height = -0. 
+            base_height = -1.0 
             feet_air_time =  1.0
             collision = -1.
             feet_stumble = -0.0 
             action_rate = -0.01
             stand_still = -0.
+            hip_pos = -1.0
 
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
