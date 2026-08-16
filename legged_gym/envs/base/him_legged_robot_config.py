@@ -67,7 +67,7 @@ class HimLeggedRobotCfg(BaseConfig):
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
-        hip_reduction = 1.0
+        hip_reduction = 0.5
 
     class asset:
         file = ""

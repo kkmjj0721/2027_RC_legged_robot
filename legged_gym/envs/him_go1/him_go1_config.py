@@ -93,4 +93,4 @@ class HimGo1RoughCfgPPO( HimLeggedRobotCfgPPO ):
     class runner( HimLeggedRobotCfgPPO.runner ):
         run_name = ''
         experiment_name = 'him_go1'
-        resume = True
+        resume = False

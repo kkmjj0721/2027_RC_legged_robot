@@ -25,8 +25,7 @@ def play(args):
     obs = env.get_observations()
     # load policy
     train_cfg.runner.resume = True
-    path = "/home/kk/github/2027_RC_legged_robot/logs/legged_gym_go1/Aug12_09-00-41_/model_6000.pt"
-    runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg, train_path=path)
+    runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     policy = runner.get_inference_policy(device=env.device)
     
     # export policy as a jit module (used to run it from C++)

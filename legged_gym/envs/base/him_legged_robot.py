@@ -709,6 +709,24 @@ class HimLeggedRobot(BaseTask):
         termination_contact_names = []
         for name in self.cfg.asset.terminate_after_contacts_on:
             termination_contact_names.extend([s for s in body_names if name in s])
+
+        hip_names = {
+            "FR_hip_joint",
+            "FL_hip_joint",
+            "RR_hip_joint",
+            "RL_hip_joint",
+        }
+
+        hip_indices = [
+            i for i, name in enumerate(self.dof_names)
+            if name in hip_names
+        ]
+
+        self.hip_indices = torch.tensor(
+            hip_indices,
+            dtype=torch.long,
+            device=self.device,
+        )
     
         base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
@@ -1331,6 +1349,7 @@ class HimLeggedRobot(BaseTask):
         """
         #pd controller
         actions_scaled = actions * self.cfg.control.action_scale
+        actions_scaled[:, self.hip_indices] *= self.cfg.control.hip_reduction
         control_type = self.cfg.control.control_type
         p_gains = self.p_gains.unsqueeze(0) * self.p_gains_multiplier
         d_gains = self.d_gains.unsqueeze(0) * self.d_gains_multiplier
