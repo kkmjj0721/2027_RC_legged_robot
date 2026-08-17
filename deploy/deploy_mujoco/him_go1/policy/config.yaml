@@ -1,6 +1,7 @@
 him_go1/himloco:
   model_name: ""
 
+
   # ----- obs -----
   # 训练时使用 6 帧历史，每帧 45 维：cmd(3) + ang_vel(3) + gravity(3) + dof_pos(12) + dof_vel(12) + actions(12)
   num_observations: 45
@@ -25,6 +26,7 @@ him_go1/himloco:
 
   # ----- scale ------
   action_scale: 0.25
+  hip_scale: 0.125
   lin_vel_scale: 2.0
   ang_vel_scale: 0.25
   dof_pos_scale: 1.0
