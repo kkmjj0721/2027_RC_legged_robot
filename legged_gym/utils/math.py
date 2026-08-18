@@ -59,3 +59,12 @@ def get_scale_shift(range):
     scale = 2. / (range[1] - range[0])
     shift = (range[1] + range[0]) / 2.
     return scale, shift
+
+def torch_rand_float_tensor(lower, upper, shape, device):
+    # Like torch_rang_float but accepts tensors as ranges. 
+    # type: (Tensor[float], Tensor[float], Tuple[int, int], str) -> Tensor
+
+    if lower.shape != shape or upper.shape != shape:
+        raise ValueError("Lower and upper bounds must have the same shape as desired shape")
+ 
+    return (upper - lower) * torch.rand(*shape, device=device) + lower

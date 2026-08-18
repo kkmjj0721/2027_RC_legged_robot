@@ -3,7 +3,7 @@ from legged_gym.envs.base.him_legged_robot_config import HimLeggedRobotCfg, HimL
 
 class HimRecoveryGo1LeggedRobotCfg( HimLeggedRobotCfg ):
     class env(HimLeggedRobotCfg.env):
-        num_envs = 4096
+        num_envs = 2048
         num_one_step_observations = 49  # commands6 + ang_vel3 + gravity3 + dof_pos12 + dof_vel12 + action12 + base_height1
         num_observations = num_one_step_observations  
         num_one_step_privileged_obs = num_one_step_observations + 3 + 3 + 187  # + lin_vel3 + push_force3 + heights187
